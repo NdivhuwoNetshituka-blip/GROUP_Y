@@ -18,8 +18,8 @@
  */
 
 import 'package:flutter/foundation.dart';
-import '../services/auth_service.dart';
-import '../models/app_user.dart';
+import '../../services/auth_service.dart';
+import '../../models/app_user.dart';
 
 class AuthViewModel extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -54,7 +54,11 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signUp(String email, String password, {String role = 'student'}) async {
+  Future<void> signUp(
+    String email,
+    String password, {
+    String role = 'student',
+  }) async {
     _isLoading = true;
     notifyListeners();
 

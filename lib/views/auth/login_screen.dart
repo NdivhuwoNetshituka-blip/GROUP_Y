@@ -15,6 +15,7 @@
  *
  * File: login_screen.dart
  * Description: Authentication screen for both student and admin users.
+ *              Supports login and student sign-up.
  */
 
 import 'package:flutter/material.dart';
@@ -35,6 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isSignUp = false;
 
   @override
   void dispose() {
@@ -43,11 +45,20 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _login() async {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     final vm = Provider.of<AuthViewModel>(context, listen: false);
-    await vm.signIn(_emailController.text.trim(), _passwordController.text);
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (_isSignUp) {
+      // New users are always created as 'student'.
+      // Admin accounts are provisioned outside the app.
+      await vm.signUp(email, password, role: 'student');
+    } else {
+      await vm.signIn(email, password);
+    }
 
     if (!mounted) return;
 
@@ -59,7 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } else if (vm.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: ${vm.errorMessage}')),
+        SnackBar(
+          content: Text(
+            '${_isSignUp ? "Sign up" : "Login"} failed: ${vm.errorMessage}',
+          ),
+        ),
       );
     }
   }
@@ -83,9 +98,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: Colors.deepPurple,
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Student Assistant Portal',
-                      style: TextStyle(
+                    Text(
+                      _isSignUp ? 'Create an Account' : 'Student Assistant Portal',
+                      style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
@@ -130,6 +145,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         if (v == null || v.isEmpty) {
                           return 'Password is required';
                         }
+                        if (_isSignUp && v.length < 6) {
+                          return 'Password must be at least 6 characters';
+                        }
                         return null;
                       },
                     ),
@@ -138,7 +156,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: vm.isLoading ? null : _login,
+                        onPressed: vm.isLoading ? null : _submit,
                         child: vm.isLoading
                             ? const SizedBox(
                                 width: 22,
@@ -147,10 +165,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Text(
-                                'Log In',
-                                style: TextStyle(fontSize: 16),
+                            : Text(
+                                _isSignUp ? 'Sign Up' : 'Log In',
+                                style: const TextStyle(fontSize: 16),
                               ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: vm.isLoading
+                          ? null
+                          : () => setState(() => _isSignUp = !_isSignUp),
+                      child: Text(
+                        _isSignUp
+                            ? 'Already have an account? Log in'
+                            : "Don't have an account? Sign up",
                       ),
                     ),
                     if (vm.errorMessage != null) ...[

@@ -18,12 +18,9 @@
  */
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../routes/route_manager.dart';
-import '../../services/auth_service.dart';
-import '../../viewmodels/auth_view_model.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -40,39 +37,20 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _decideRoute() async {
-    // Give Supabase a moment to restore session
+    // Short delay so the splash is visible to the user
     await Future.delayed(const Duration(milliseconds: 800));
 
-    final session = Supabase.instance.client.auth.currentSession;
-
-    if (session == null) {
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, RouteManager.logInScreen);
-      return;
-    }
-
-    // User is logged in - fetch their role and route accordingly
+    // Always clear any cached session so the login screen is shown on launch.
+    // Supabase persists sessions to local storage by default, which would
+    // otherwise send the user straight past the login screen.
     try {
-      final user = await AuthService().getCurrentUser();
-      if (!mounted) return;
-
-      if (user == null) {
-        Navigator.pushReplacementNamed(context, RouteManager.logInScreen);
-        return;
-      }
-
-      // Cache the user in the viewmodel
-      Provider.of<AuthViewModel>(context, listen: false).setUser(user);
-
-      if (user.role.toLowerCase() == 'admin') {
-        Navigator.pushReplacementNamed(context, RouteManager.adminDashBoard);
-      } else {
-        Navigator.pushReplacementNamed(context, RouteManager.homeScreen);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, RouteManager.logInScreen);
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {
+      // Safe to ignore - there may not be an active session.
     }
+
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, RouteManager.logInScreen);
   }
 
   @override
