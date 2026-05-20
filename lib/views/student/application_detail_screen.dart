@@ -18,171 +18,95 @@
  */
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import '../../routes/route_manager.dart';
-import '../../viewmodels/application_view_model.dart';
 
 class ApplicationDetailScreen extends StatelessWidget {
   const ApplicationDetailScreen({super.key});
 
-  Color _statusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'approved':
-        return Colors.green;
-      case 'rejected':
-        return Colors.red;
-      default:
-        return Colors.orange;
-    }
-  }
-
-  Future<void> _confirmDelete(BuildContext context) async {
-    final vm = Provider.of<ApplicationViewModel>(context, listen: false);
-    final appId = vm.applicationId;
-    if (appId == null) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete application?'),
-        content: const Text(
-          'This action cannot be undone. Your application will be permanently removed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-    final success = await vm.deleteApplication(appId);
-    if (!context.mounted) return;
-    if (success) {
-      vm.resetForm();
-      Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Application deleted.')));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(vm.errorMessage ?? 'Could not delete.')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Application details'),
-        actions: [
-          Consumer<ApplicationViewModel>(
-            builder: (context, vm, _) {
-              final isPending = vm.status.toLowerCase() == 'pending';
-              if (!isPending) return const SizedBox.shrink();
-              return Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.edit),
-                    onPressed: () => Navigator.pushNamed(
-                      context,
-                      RouteManager.applicationFormScreen,
+      appBar: AppBar(title: const Text("Application Details")),
+
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+
+        child: Card(
+          elevation: 5,
+
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  "Student Application",
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+
+                SizedBox(height: 20),
+
+                Row(
+                  children: [
+                    Icon(Icons.person),
+                    SizedBox(width: 10),
+                    Text(
+                      "Full Name: Rotondwa Gift",
+                      style: TextStyle(fontSize: 16),
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _confirmDelete(context),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-      body: Consumer<ApplicationViewModel>(
-        builder: (context, vm, _) {
-          if (vm.applicationId == null) {
-            return const Center(child: Text('No application loaded.'));
-          }
-          final isPending = vm.status.toLowerCase() == 'pending';
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Card(
-                child: ListTile(
-                  title: const Text('Status'),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
+                  ],
+                ),
+
+                SizedBox(height: 15),
+
+                Row(
+                  children: [
+                    Icon(Icons.email),
+                    SizedBox(width: 10),
+                    Text(
+                      "Email: example@gmail.com",
+                      style: TextStyle(fontSize: 16),
                     ),
-                    decoration: BoxDecoration(
-                      color: _statusColor(vm.status).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _statusColor(vm.status)),
+                  ],
+                ),
+
+                SizedBox(height: 15),
+
+                Row(
+                  children: [
+                    Icon(Icons.phone),
+                    SizedBox(width: 10),
+                    Text("Phone: 0843214912", style: TextStyle(fontSize: 16)),
+                  ],
+                ),
+
+                SizedBox(height: 15),
+
+                Row(
+                  children: [
+                    Icon(Icons.school),
+                    SizedBox(width: 10),
+                    Text(
+                      "Course: Information Technology",
+                      style: TextStyle(fontSize: 16),
                     ),
-                    child: Text(
-                      vm.status,
-                      style: TextStyle(
-                        color: _statusColor(vm.status),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                  ],
                 ),
-              ),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.book_outlined),
-                  title: const Text('First module'),
-                  subtitle: Text(vm.firstModule.moduleCode),
-                ),
-              ),
-              if (vm.secondModule != null)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.book_outlined),
-                    title: const Text('Second module'),
-                    subtitle: Text(vm.secondModule!.moduleCode),
-                  ),
-                ),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.check_circle_outline),
-                  title: const Text('Eligibility confirmed'),
-                  subtitle: Text(vm.confirmedEligibility ? 'Yes' : 'No'),
-                ),
-              ),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.calendar_today_outlined),
-                  title: const Text('Submitted on'),
-                  subtitle: Text(
-                    '${vm.timeOfApplication.day}/${vm.timeOfApplication.month}/${vm.timeOfApplication.year}',
-                  ),
-                ),
-              ),
-              if (!isPending) ...[
-                const SizedBox(height: 16),
-                const Center(
-                  child: Text(
-                    'This application has been reviewed and cannot be edited.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
+
+                SizedBox(height: 25),
+
+                Text(
+                  "Application Status: Pending",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
                   ),
                 ),
               ],
-            ],
-          );
-        },
+            ),
+          ),
+        ),
       ),
     );
   }
