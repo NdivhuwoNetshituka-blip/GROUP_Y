@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/student.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StudentViewModel extends ChangeNotifier {
   final Student _student = Student(
@@ -9,6 +10,7 @@ class StudentViewModel extends ChangeNotifier {
     currentYear: "",
   );
 
+  // Getters
   String get firstName => _student.firstName;
   String get lastName => _student.lastName;
   String get studentNumber => _student.studentNumber;
@@ -17,14 +19,16 @@ class StudentViewModel extends ChangeNotifier {
   String? get academicTranscript => _student.academicTranscript;
   String? get cv => _student.cv;
   String? get proofOfRegistration => _student.proofOfRegistration;
+  String? get matricCertificate => _student.matricCertificate;
+  Student get student => _student;
 
-  //Instead of an update method, I have a set method for the id because this
-  //field is not meant to be updated. Only set once returned from Supabase
+  // Set studentId once
   void setStudentId(String studentId) {
     _student.studentId = studentId;
     notifyListeners();
   }
 
+  // Update methods
   void updateFirstName(String firstName) {
     _student.firstName = firstName;
     notifyListeners();
@@ -63,5 +67,18 @@ class StudentViewModel extends ChangeNotifier {
   void updateProofOfRegistration(String filePath) {
     _student.proofOfRegistration = filePath;
     notifyListeners();
+  }
+
+  void updateMatricCertificate(String filePath) {
+    _student.matricCertificate = filePath;
+    notifyListeners();
+  }
+
+  void setStudentIdFromAuth() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      _student.studentId = user.id;
+      notifyListeners();
+    }
   }
 }
