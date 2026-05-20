@@ -19,9 +19,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/module.dart';
+import '../../models/student.dart'; // ✅ ADDED
 import '../../viewmodels/application_view_model.dart';
+import '../../viewmodels/applications_view_model.dart';
+import '../../viewmodels/auth_view_model.dart';
+import '../../viewmodels/student_view_model.dart';
+import '../../services/student_service.dart';
 
 class ApplicationFormScreen extends StatefulWidget {
   const ApplicationFormScreen({super.key});
@@ -33,298 +38,270 @@ class ApplicationFormScreen extends StatefulWidget {
 class _ApplicationFormScreenState extends State<ApplicationFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // Hardcoded module catalog — replace with Supabase fetch later if needed
-  final List<Module> _allModules = [
-    Module(
-      moduleCode: 'PRG116C',
-      moduleName: 'Programming 1A',
-      academicLevel: '1',
-    ),
-    Module(
-      moduleCode: 'PRG126C',
-      moduleName: 'Programming 1B',
-      academicLevel: '1',
-    ),
-    Module(
-      moduleCode: 'WPG216C',
-      moduleName: 'Web Programming',
-      academicLevel: '2',
-    ),
-    Module(
-      moduleCode: 'OOP216C',
-      moduleName: 'Object-Oriented Programming',
-      academicLevel: '2',
-    ),
-    Module(
-      moduleCode: 'TPG316C',
-      moduleName: 'Technical Programming III',
-      academicLevel: '3',
-    ),
-    Module(
-      moduleCode: 'PRJ316C',
-      moduleName: 'Project Management',
-      academicLevel: '3',
-    ),
-  ];
+  final TextEditingController firstModuleCodeController =
+      TextEditingController();
+  final TextEditingController firstModuleNameController =
+      TextEditingController();
+  final TextEditingController firstModuleLevelController =
+      TextEditingController();
 
-  String? _firstLevel;
-  Module? _firstModule;
-  bool _addSecondModule = false;
-  String? _secondLevel;
-  Module? _secondModule;
-  bool _eligibilityConfirmed = false;
+  final TextEditingController secondModuleCodeController =
+      TextEditingController();
+  final TextEditingController secondModuleNameController =
+      TextEditingController();
+  final TextEditingController secondModuleLevelController =
+      TextEditingController();
+
+  bool eligibilityConfirmed = false;
+  bool _isSubmitting = false;
 
   @override
-  void initState() {
-    super.initState();
-    // Pre-populate if editing
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final vm = Provider.of<ApplicationViewModel>(context, listen: false);
-      if (vm.applicationId != null) {
-        if (vm.firstModule.moduleCode.isNotEmpty) {
-          _firstModule = _allModules.firstWhere(
-            (m) => m.moduleCode == vm.firstModule.moduleCode,
-            orElse: () => _allModules.first,
-          );
-          _firstLevel = _firstModule!.academicLevel;
-        }
-        if (vm.secondModule != null) {
-          _addSecondModule = true;
-          _secondModule = _allModules.firstWhere(
-            (m) => m.moduleCode == vm.secondModule!.moduleCode,
-            orElse: () => _allModules.first,
-          );
-          _secondLevel = _secondModule!.academicLevel;
-        }
-        _eligibilityConfirmed = vm.confirmedEligibility;
-        setState(() {});
-      }
-    });
+  void dispose() {
+    firstModuleCodeController.dispose();
+    firstModuleNameController.dispose();
+    firstModuleLevelController.dispose();
+    secondModuleCodeController.dispose();
+    secondModuleNameController.dispose();
+    secondModuleLevelController.dispose();
+    super.dispose();
   }
 
-  List<Module> _modulesForLevel(String? level, {Module? exclude}) {
-    if (level == null) return [];
-    return _allModules
-        .where(
-          (m) =>
-              m.academicLevel == level && m.moduleCode != exclude?.moduleCode,
-        )
-        .toList();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_firstModule == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a first module.')),
-      );
-      return;
+  /// Resolve the current student's UUID synchronously.
+  String? _resolveStudentId(BuildContext context) {
+    final authViewModel = Provider.of<AuthViewModel>(context, listen: false);
+    if (authViewModel.currentUser != null &&
+        authViewModel.currentUser!.id.isNotEmpty) {
+      return authViewModel.currentUser!.id;
     }
-    if (!_eligibilityConfirmed) {
+
+    final supabaseUser = Supabase.instance.client.auth.currentUser;
+    if (supabaseUser != null) {
+      return supabaseUser.id;
+    }
+
+    final studentViewModel = Provider.of<StudentViewModel>(
+      context,
+      listen: false,
+    );
+    final sid = studentViewModel.student.studentId;
+    if (sid != null && sid.isNotEmpty) {
+      return sid;
+    }
+
+    return null;
+  }
+
+  /// Ensure a student record exists for this user ID; create minimal one if missing.
+  Future<void> _ensureStudentRecordExists(String studentId) async {
+    final studentService = StudentService();
+    final existing = await studentService.getStudentById(studentId);
+    if (existing == null) {
+      final newStudent = Student(
+        studentId: studentId,
+        firstName: '',
+        lastName: '',
+        studentNumber: '',
+        currentYear: '',
+      );
+      await studentService.createStudent(newStudent);
+    }
+  }
+
+  Future<void> submitForm(BuildContext context) async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (!eligibilityConfirmed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('You must confirm you meet the minimum requirements.'),
+          content: Text("Please confirm your eligibility before submitting."),
         ),
       );
       return;
     }
 
-    final vm = Provider.of<ApplicationViewModel>(context, listen: false);
-    vm.updateFirstModule(_firstModule!);
-    vm.updateSecondModule(_addSecondModule ? _secondModule : null);
-    vm.updateEligibility(_eligibilityConfirmed);
-    vm.updateTimeOfApplication(DateTime.now());
-
-    final isEdit = vm.applicationId != null;
-    final success = isEdit
-        ? await vm.saveEdits()
-        : await vm.submitApplication();
-
-    if (!mounted) return;
-    if (success) {
+    final studentId = _resolveStudentId(context);
+    if (studentId == null || studentId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
-            isEdit
-                ? 'Application updated successfully.'
-                : 'Application submitted successfully.',
+            "You must be logged in to submit an application. Please log in again.",
           ),
         ),
       );
-      // Reload list for the home screen
-      if (vm.studentId.isNotEmpty) {
-        await vm.loadApplicationsForStudent(vm.studentId);
-      }
-      Navigator.pop(context);
-    } else {
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    // ✅ Create minimal student record if it doesn't exist
+    try {
+      await _ensureStudentRecordExists(studentId);
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(vm.errorMessage ?? 'Something went wrong.')),
+        SnackBar(content: Text("Error creating student record: $e")),
       );
+      setState(() => _isSubmitting = false);
+      return;
+    }
+
+    final appViewModel = Provider.of<ApplicationViewModel>(
+      context,
+      listen: false,
+    );
+    final appsViewModel = Provider.of<ApplicationsViewModel>(
+      context,
+      listen: false,
+    );
+
+    appViewModel.setStudentId(studentId);
+
+    final firstModule = Module(
+      moduleCode: firstModuleCodeController.text.trim(),
+      moduleName: firstModuleNameController.text.trim(),
+      academicLevel: firstModuleLevelController.text.trim(),
+    );
+
+    Module? secondModule;
+    if (secondModuleCodeController.text.trim().isNotEmpty &&
+        secondModuleNameController.text.trim().isNotEmpty &&
+        secondModuleLevelController.text.trim().isNotEmpty) {
+      secondModule = Module(
+        moduleCode: secondModuleCodeController.text.trim(),
+        moduleName: secondModuleNameController.text.trim(),
+        academicLevel: secondModuleLevelController.text.trim(),
+      );
+    }
+
+    appViewModel.updateFirstModule(firstModule);
+    appViewModel.updateSecondModule(secondModule);
+    appViewModel.updateEligibility(eligibilityConfirmed);
+    appViewModel.updateTimeOfApplication(DateTime.now());
+
+    try {
+      await appViewModel.saveApplication();
+      await appsViewModel.loadApplications(studentId);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Application submitted successfully")),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error saving application: $e")));
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Consumer<ApplicationViewModel>(
-          builder: (_, vm, __) => Text(
-            vm.applicationId != null ? 'Edit Application' : 'New Application',
+      appBar: AppBar(title: const Text("Submit Application")),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              const Text(
+                "First Module",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: firstModuleCodeController,
+                decoration: const InputDecoration(
+                  labelText: "Module Code",
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value == null || value.isEmpty ? "Enter module code" : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: firstModuleNameController,
+                decoration: const InputDecoration(
+                  labelText: "Module Name",
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value == null || value.isEmpty ? "Enter module name" : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: firstModuleLevelController,
+                decoration: const InputDecoration(
+                  labelText: "Academic Level",
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) => value == null || value.isEmpty
+                    ? "Enter academic level"
+                    : null,
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                "Second Module (Optional)",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: secondModuleCodeController,
+                decoration: const InputDecoration(
+                  labelText: "Module Code",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: secondModuleNameController,
+                decoration: const InputDecoration(
+                  labelText: "Module Name",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: secondModuleLevelController,
+                decoration: const InputDecoration(
+                  labelText: "Academic Level",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 24),
+              CheckboxListTile(
+                title: const Text("Confirm Eligibility"),
+                value: eligibilityConfirmed,
+                onChanged: (val) {
+                  setState(() {
+                    eligibilityConfirmed = val ?? false;
+                  });
+                },
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : () => submitForm(context),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text("Submit Application"),
+                ),
+              ),
+            ],
           ),
         ),
-      ),
-      body: Consumer<ApplicationViewModel>(
-        builder: (context, vm, _) {
-          return Form(
-            key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const Text(
-                  'Module 1',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: _firstLevel,
-                  decoration: const InputDecoration(
-                    labelText: 'Academic level',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: '1',
-                      child: Text('First-year modules'),
-                    ),
-                    DropdownMenuItem(
-                      value: '2',
-                      child: Text('Second-year modules'),
-                    ),
-                    DropdownMenuItem(
-                      value: '3',
-                      child: Text('Third-year modules'),
-                    ),
-                  ],
-                  validator: (v) => v == null ? 'Please pick a level' : null,
-                  onChanged: (v) => setState(() {
-                    _firstLevel = v;
-                    _firstModule = null;
-                  }),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<Module>(
-                  initialValue: _firstModule,
-                  decoration: const InputDecoration(
-                    labelText: 'Module',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _modulesForLevel(_firstLevel)
-                      .map(
-                        (m) => DropdownMenuItem(
-                          value: m,
-                          child: Text('${m.moduleCode} - ${m.moduleName}'),
-                        ),
-                      )
-                      .toList(),
-                  validator: (v) => v == null ? 'Please pick a module' : null,
-                  onChanged: (v) => setState(() => _firstModule = v),
-                ),
-                const SizedBox(height: 24),
-                SwitchListTile(
-                  title: const Text('Apply for a second module'),
-                  subtitle: const Text('Optional — maximum of 2 modules'),
-                  value: _addSecondModule,
-                  onChanged: (v) => setState(() {
-                    _addSecondModule = v;
-                    if (!v) {
-                      _secondLevel = null;
-                      _secondModule = null;
-                    }
-                  }),
-                ),
-                if (_addSecondModule) ...[
-                  const Text(
-                    'Module 2',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    initialValue: _secondLevel,
-                    decoration: const InputDecoration(
-                      labelText: 'Academic level',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: '1',
-                        child: Text('First-year modules'),
-                      ),
-                      DropdownMenuItem(
-                        value: '2',
-                        child: Text('Second-year modules'),
-                      ),
-                      DropdownMenuItem(
-                        value: '3',
-                        child: Text('Third-year modules'),
-                      ),
-                    ],
-                    validator: (v) => v == null ? 'Please pick a level' : null,
-                    onChanged: (v) => setState(() {
-                      _secondLevel = v;
-                      _secondModule = null;
-                    }),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<Module>(
-                    initialValue: _secondModule,
-                    decoration: const InputDecoration(
-                      labelText: 'Module',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _modulesForLevel(_secondLevel, exclude: _firstModule)
-                        .map(
-                          (m) => DropdownMenuItem(
-                            value: m,
-                            child: Text('${m.moduleCode} - ${m.moduleName}'),
-                          ),
-                        )
-                        .toList(),
-                    validator: (v) => v == null ? 'Please pick a module' : null,
-                    onChanged: (v) => setState(() => _secondModule = v),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                CheckboxListTile(
-                  title: const Text(
-                    'I confirm I meet the minimum requirements for the selected modules.',
-                  ),
-                  value: _eligibilityConfirmed,
-                  onChanged: (v) =>
-                      setState(() => _eligibilityConfirmed = v ?? false),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: vm.isLoading ? null : _submit,
-                    child: vm.isLoading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(
-                            vm.applicationId != null
-                                ? 'Save changes'
-                                : 'Submit application',
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
       ),
     );
   }
