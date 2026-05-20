@@ -1,75 +1,70 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
+import '../services/auth_service.dart';
 import '../models/app_user.dart';
 
-class AuthService {
-  final SupabaseClient _client = Supabase.instance.client;
+class AuthViewModel extends ChangeNotifier {
+  final AuthService _authService = AuthService();
 
-  /// Sign up a new user with email + password
-  Future<AppUser> signUp(String email, String password, String role) async {
-    final response = await _client.auth.signUp(
-      email: email,
-      password: password,
-    );
+  AppUser? _currentUser;
+  AppUser? get currentUser => _currentUser;
 
-    if (response.user == null) {
-      throw Exception('Sign up failed');
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
+
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
+
+  Future<void> signUp(String email, String password, String role) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _currentUser = await _authService.signUp(email, password, role);
+      _errorMessage = null;
+    } catch (e) {
+      _errorMessage = e.toString();
     }
 
-    //Insert into users table to store role
-    await _client.from('users').insert({
-      'id': response.user!.id,
-      'email': email,
-      'role': role,
-    });
-
-    return AppUser(id: response.user!.id, email: email, role: role);
+    _isLoading = false;
+    notifyListeners();
   }
 
-  /// Sign in an existing user
-  Future<AppUser> signIn(String email, String password) async {
-    final response = await _client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+  Future<void> signIn(String email, String password) async {
+    _isLoading = true;
+    notifyListeners();
 
-    if (response.user == null) {
-      throw Exception('Login failed');
+    try {
+      _currentUser = await _authService.signIn(email, password);
+      _errorMessage = null;
+    } catch (e) {
+      // Better error handling
+      if (e.toString().contains('invalid_credentials')) {
+        _errorMessage = 'Invalid email or password. Please try again.';
+      } else if (e.toString().contains('email_not_confirmed')) {
+        _errorMessage = 'Please verify your email address before logging in.';
+      } else {
+        _errorMessage =
+            'Login failed. Please check your connection and try again.';
+      }
     }
 
-    //Fetch role from users table
-    final userData = await _client
-        .from('users')
-        .select()
-        .eq('id', response.user!.id)
-        .single();
-
-    return AppUser(
-      id: response.user!.id,
-      email: response.user!.email ?? '',
-      role: userData['role'],
-    );
+    _isLoading = false;
+    notifyListeners();
   }
 
-  /// Sign out the current user
   Future<void> signOut() async {
-    await _client.auth.signOut();
+    await _authService.signOut();
+    _currentUser = null;
+    notifyListeners();
   }
 
-  /// Get the currently logged-in user
   Future<AppUser?> getCurrentUser() async {
-    final user = _client.auth.currentUser;
-    if (user == null) return null;
-
-    final userData = await _client
-        .from('users')
-        .select()
-        .eq('id', user.id)
-        .single();
-
-    return AppUser(
-      id: user.id,
-      email: user.email ?? '',
-      role: userData['role'],
-    );
+    try {
+      _currentUser = await _authService.getCurrentUser();
+      return _currentUser;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return null;
+    }
   }
 }
