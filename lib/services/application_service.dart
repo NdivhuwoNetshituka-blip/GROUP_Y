@@ -1,22 +1,3 @@
-/**
- * GROUP Y - TPG316C Student Assistant Application System
- *
- * Student Numbers and Names:
- *   215135458 - LE Lipali
- *   223013773 - NM Netshituka
- *   224004294 - B Linda
- *   221050663 - GR Kgwele
- *   222066543 - RG Madi
- *   224007421 - Y Mazamani
- *   224099468 - LE Letsie
- *   219002738 - LTBG Pule
- *   223060226 - NC Pali
- *   223007074 - T Zitha
- *
- * File: application_service.dart
- * Description: Service layer for application CRUD operations against Supabase.
- */
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/application.dart';
 import '../models/module.dart';
@@ -24,87 +5,126 @@ import '../models/module.dart';
 class ApplicationService {
   final SupabaseClient _client = Supabase.instance.client;
 
+  /// Helper method to fetch module details by code
+  Future<Module?> _getModuleByCode(String moduleCode) async {
+    if (moduleCode.isEmpty) return null;
+
+    try {
+      final response = await _client
+          .from('modules')
+          .select()
+          .eq('module_code', moduleCode)
+          .maybeSingle();
+
+      if (response == null) return null;
+
+      return Module(
+        moduleCode: response['module_code'] ?? '',
+        moduleName: response['module_name'] ?? '',
+        academicLevel: response['academic_level'] ?? '',
+      );
+    } catch (e) {
+      print('Error fetching module $moduleCode: $e');
+      return null;
+    }
+  }
+
+  /// Helper to map a raw Supabase row to an Application object
+  Future<Application> _mapRowToApplication(Map<String, dynamic> data) async {
+    final firstModuleDetails = await _getModuleByCode(
+      data['first_module'] ?? '',
+    );
+
+    Module? secondModuleDetails;
+    if (data['second_module'] != null &&
+        data['second_module'].toString().isNotEmpty) {
+      secondModuleDetails = await _getModuleByCode(data['second_module']);
+    }
+
+    return Application(
+      // FIX 1: column is 'application_id', not 'id'
+      applicationId: data['application_id']?.toString(),
+      studentId: data['student_id'],
+      firstModule:
+          firstModuleDetails ??
+          Module(
+            moduleCode: data['first_module'] ?? '',
+            moduleName: '',
+            academicLevel: '',
+          ),
+      secondModule: secondModuleDetails,
+      confirmedEligibility: data['confirmed_eligibility'] ?? false,
+      status: data['status'] ?? 'Pending',
+      timeOfApplication: DateTime.parse(data['time_of_application']),
+    );
+  }
+
   /// Insert a new application
   Future<Application> createApplication(Application app) async {
-    final response = await _client.from('applications').insert({
-      'student_id': app.studentId,
-      'first_module': app.firstModule.moduleCode,
-      'second_module': app.secondModule?.moduleCode,
-      'confirmed_eligibility': app.confirmedEligibility,
-      'status': app.status,
-      'time_of_application': app.timeOfApplication.toIso8601String(),
-    }).select();
+    if (app.studentId.isEmpty) {
+      throw Exception(
+        "Cannot save application: studentId is empty. "
+        "Make sure the user is logged in before submitting.",
+      );
+    }
 
-    final data = response[0];
-    return _mapToApplication(data);
-  }
-
-  /// Fetch applications for a student
-  Future<List<Application>> getApplicationsByStudent(String studentId) async {
-    final response = await _client
+    final data = await _client
         .from('applications')
+        .insert({
+          'student_id': app.studentId,
+          'first_module': app.firstModule.moduleCode,
+          'second_module': app.secondModule?.moduleCode,
+          'confirmed_eligibility': app.confirmedEligibility,
+          'status': app.status,
+          'time_of_application': app.timeOfApplication.toIso8601String(),
+        })
         .select()
-        .eq('student_id', studentId);
+        .single();
 
-    return (response as List).map((data) => _mapToApplication(data)).toList();
+    return _mapRowToApplication(data);
   }
 
-  /// Fetch ALL applications (admin only)
+  /// Fetch ALL applications (for admin)
   Future<List<Application>> getAllApplications() async {
     final response = await _client
         .from('applications')
         .select()
         .order('time_of_application', ascending: false);
 
-    return (response as List).map((data) => _mapToApplication(data)).toList();
+    final List<Application> applications = [];
+    for (var data in response as List) {
+      applications.add(await _mapRowToApplication(data));
+    }
+    return applications;
+  }
+
+  /// Fetch applications for a student
+  Future<List<Application>> getApplicationsByStudent(String studentId) async {
+    if (studentId.isEmpty) return [];
+
+    final response = await _client
+        .from('applications')
+        .select()
+        .eq('student_id', studentId)
+        .order('time_of_application', ascending: false);
+
+    final List<Application> applications = [];
+    for (var data in response as List) {
+      applications.add(await _mapRowToApplication(data));
+    }
+    return applications;
   }
 
   /// Update application status
   Future<void> updateStatus(String applicationId, String status) async {
+    // FIX 2: was .eq('id', ...) — correct column name is 'application_id'
+    // FIX 3: added .select().single() so Supabase actually executes the update
+    //         and throws if no row was matched (e.g. RLS blocking the write)
     await _client
         .from('applications')
         .update({'status': status})
-        .eq('id', applicationId);
-  }
-
-  /// Update the modules and eligibility of an existing application (student edit)
-  Future<void> updateApplication(Application app) async {
-    if (app.applicationId == null) return;
-    await _client
-        .from('applications')
-        .update({
-          'first_module': app.firstModule.moduleCode,
-          'second_module': app.secondModule?.moduleCode,
-          'confirmed_eligibility': app.confirmedEligibility,
-        })
-        .eq('id', app.applicationId!);
-  }
-
-  /// Delete an application by ID
-  Future<void> deleteApplication(String applicationId) async {
-    await _client.from('applications').delete().eq('id', applicationId);
-  }
-
-  /// Helper: turn a Supabase row into an Application object
-  Application _mapToApplication(Map<String, dynamic> data) {
-    return Application(
-      applicationId: data['id'],
-      studentId: data['student_id'],
-      firstModule: Module(
-        moduleCode: data['first_module'] ?? '',
-        moduleName: '',
-        academicLevel: '',
-      ),
-      secondModule: data['second_module'] != null
-          ? Module(
-              moduleCode: data['second_module'],
-              moduleName: '',
-              academicLevel: '',
-            )
-          : null,
-      confirmedEligibility: data['confirmed_eligibility'] ?? false,
-      status: data['status'] ?? 'Pending',
-      timeOfApplication: DateTime.parse(data['time_of_application']),
-    );
+        .eq('application_id', applicationId)
+        .select()
+        .single();
   }
 }
