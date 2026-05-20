@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:student_assistant_application_system/viewmodels/applications_view_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:student_assistant_application_system/viewmodels/admin_applications_view_model.dart';
+import 'package:student_assistant_application_system/viewmodels/admin_students_view_model.dart';
 
 import 'routes/route_manager.dart';
 import 'viewmodels/auth_view_model.dart';
@@ -28,6 +31,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
         ChangeNotifierProvider(create: (_) => ApplicationViewModel()),
         ChangeNotifierProvider(create: (_) => StudentViewModel()),
+        ChangeNotifierProvider(create: (_) => ApplicationsViewModel()),
+        ChangeNotifierProvider(create: (_) => AdminApplicationsViewModel()),
+        ChangeNotifierProvider(create: (_) => AdminStudentsViewModel()),
       ],
       child: MaterialApp(
         title: 'Student Assistant Application System',
@@ -35,6 +41,7 @@ class MyApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
           useMaterial3: true,
         ),
+        debugShowCheckedModeBanner: false,
         onGenerateRoute: RouteManager.generateRoute,
         initialRoute: RouteManager.splashScreen,
       ),
